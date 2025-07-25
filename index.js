@@ -9,9 +9,9 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = 'ig_secret_token_123';
 
 // 🔐 Ключи из .env (имена в Render должны быть точно такими)
-const OPENAI_API_KEY         = process.env.OPENAI_API_KEY;
-const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN;
-const IG_BUSINESS_ID         = process.env.IG_BUSINESS_ID;
+const OPENAI_API_KEY         = process.env.OPENAI_API_KEY?.trim();
+const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN?.trim();
+const IG_BUSINESS_ID         = process.env.IG_BUSINESS_ID?.trim();
 
 app.use(express.json());
 
