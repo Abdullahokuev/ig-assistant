@@ -35,6 +35,7 @@ app.get('/webhook', (req, res) => {
 
 // Обработка входящих сообщений
 app.post('/webhook', async (req, res) => {
+  console.log('>>> GOT WEBHOOK POST:', JSON.stringify(req.body, null, 2));
   const body = req.body;
 
   if (body.object === 'instagram') {
