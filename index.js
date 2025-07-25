@@ -35,37 +35,30 @@ app.get('/webhook', (req, res) => {
 });
 
 // 3) Обработка входящих Webhook POST
+// Обработка входящих сообщений
 app.post('/webhook', async (req, res) => {
   console.log('>>> GOT WEBHOOK POST:', JSON.stringify(req.body, null, 2));
   const body = req.body;
 
   if (body.object === 'instagram') {
+    // для каждого entry
     for (const entry of body.entry) {
-      const changes = entry.changes;
-      if (!changes || changes.length === 0) continue;
+      // сообщения лежат в entry.messaging
+      const messagingEvents = entry.messaging;
+      if (!messagingEvents || messagingEvents.length === 0) continue;
 
-      for (const change of changes) {
-        const message     = change.value;
-        const senderId    = message.from;
-        const messageText = message.text?.body;
+      for (const event of messagingEvents) {
+        const senderId   = event.sender.id;
+        const messageText = event.message?.text;
 
         if (!messageText) continue;
         console.log(`📩 Получено сообщение от ${senderId}: ${messageText}`);
 
-        // 4) Запрос в OpenAI
+        // формируем ответ через OpenAI
         const aiReply = await getAIReply(messageText);
         console.log(`🤖 Ответ ИИ: ${aiReply}`);
 
-        // 5) Отправка ответа в Instagram
-        console.log('🔜 Отправляю в Instagram:', {
-          url: `https://graph.facebook.com/v19.0/${IG_BUSINESS_ID}/messages`,
-          body: {
-            recipient: { id: senderId },
-            messaging_type: 'RESPONSE',
-            message: { text: aiReply }
-          }
-        });
-
+        // отправляем обратно в Instagram
         try {
           await axios.post(
             `https://graph.facebook.com/v19.0/${IG_BUSINESS_ID}/messages`,
@@ -81,14 +74,13 @@ app.post('/webhook', async (req, res) => {
               },
             }
           );
-          console.log('✅ Успешно отправили ответ в Instagram');
+          console.log('✅ Ответ отправлен в Instagram');
         } catch (err) {
           console.error('❌ Ошибка отправки в Instagram:', err.response?.data || err.message);
         }
       }
     }
 
-    // Подтверждаем получение Webhook
     res.status(200).send('EVENT_RECEIVED');
   } else {
     res.sendStatus(404);
