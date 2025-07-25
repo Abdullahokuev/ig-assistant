@@ -1,30 +1,28 @@
-require('dotenv').config(); // Подключаем dotenv
+require('dotenv').config();                         // Подключаем .env
 const express = require('express');
 const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔑 Секретный токен для верификации Webhook
+// 🔑 Секрет для верификации Webhook — должен совпадать с тем, что в Facebook App
 const VERIFY_TOKEN = 'ig_secret_token_123';
 
-// 🔐 Ключи из .env файла
+// 🔐 Переменные из .env / Render Dashboard
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN;
 const IG_BUSINESS_ID = process.env.IG_BUSINESS_ID;
 
 app.use(express.json());
 
-// Проверка сервера
+// ————————————————
+// 1) Проверка здоровья сервера
 app.get('/', (req, res) => {
   res.send('🤖 Ассистент работает!');
 });
 
-// Верификация Webhook от Instagram
+// 2) Верификация Webhook (GET /webhook)
 app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
+  const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('WEBHOOK_VERIFIED');
     res.status(200).send(challenge);
@@ -33,77 +31,81 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// Обработка входящих сообщений
+// 3) Прием Webhook-постов (POST /webhook)
 app.post('/webhook', async (req, res) => {
   console.log('>>> GOT WEBHOOK POST:', JSON.stringify(req.body, null, 2));
   const body = req.body;
 
+  // Убедимся, что это именно Instagram-событие
   if (body.object === 'instagram') {
     for (const entry of body.entry) {
-      const changes = entry.changes;
+      // Instagram-шлюз кладет события в entry.messaging
+      const messages = entry.messaging || [];
+      for (const msgEvent of messages) {
+        const senderId   = msgEvent.sender.id;
+        const messageText = msgEvent.message?.text;
+        if (!messageText) continue;
 
-      if (changes && changes.length > 0) {
-        for (const change of changes) {
-          const message = change.value;
-          const senderId = message.from;
-          const messageText = message.text?.body;
+        console.log(`📩 Получено сообщение: ${messageText}`);
 
-          if (messageText) {
-            console.log(`📩 Получено сообщение: ${messageText}`);
+        // 4) Генерим ответ через OpenAI
+        const aiReply = await getAIReply(messageText);
+        console.log(`🤖 Ответ ИИ: ${aiReply}`);
 
-            const aiReply = await getAIReply(messageText);
-            console.log(`🤖 Ответ ИИ: ${aiReply}`);
-
-            await axios.post(
-              `https://graph.facebook.com/v19.0/${process.env.IG_BUSINESS_ID}/messages`,
-              {
-                recipient: { id: senderId },
-                messaging_type: 'RESPONSE',
-                message: { text: aiReply },
-              },
-              {
-                headers: {
-                  Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}`,
-                  'Content-Type': 'application/json',
-                },
+        // 5) Отправляем обратно в Instagram
+        try {
+          const resp = await axios.post(
+            `https://graph.facebook.com/v23.0/${IG_BUSINESS_ID}/messages`,
+            {
+              recipient: { id: senderId },
+              messaging_type: 'RESPONSE',
+              message: { text: aiReply }
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${INSTAGRAM_ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
               }
-            );
-          }
+            }
+          );
+          console.log('✅ Ответ отправлен в Instagram:', resp.data);
+        } catch (err) {
+          console.error('❌ Ошибка отправки в Instagram:', err.response?.data || err.message);
         }
       }
     }
-
-    res.status(200).send('EVENT_RECEIVED');
-  } else {
-    res.sendStatus(404);
+    return res.status(200).send('EVENT_RECEIVED');
   }
+
+  // Если это не наш Webhook — 404
+  res.sendStatus(404);
 });
 
-// Запрос в OpenAI
+// 6) Функция общения с OpenAI
 async function getAIReply(text) {
   try {
-    const response = await axios.post(
+    const resp = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-4o',
+        model: 'gpt-4',
         messages: [{ role: 'user', content: text }],
-        temperature: 0.7,
+        temperature: 0.7
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
+          Authorization: `Bearer ${OPENAI_API_KEY}`
+        }
       }
     );
-    return response.data.choices[0].message.content;
-  } catch (error) {
-    console.error('❌ Ошибка OpenAI:', error.response?.data || error.message);
+    return resp.data.choices[0].message.content;
+  } catch (err) {
+    console.error('❌ Ошибка OpenAI:', err.response?.data || err.message);
     return 'Извините, произошла ошибка.';
   }
 }
 
-// Запуск сервера
+// 7) Стартуем сервер
 app.listen(PORT, () => {
   console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
 });
