@@ -37,43 +37,45 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
-if (body.object === 'instagram') {
-  for (const entry of body.entry) {
-    const changes = entry.changes;
-    if (changes && changes.length > 0) {
-      for (const change of changes) {
-        const message = change.value;
-        const senderId = message.from;
-        const messageText = message.text;
+  if (body.object === 'instagram') {
+    for (const entry of body.entry) {
+      const changes = entry.changes;
 
-        if (messageText) {
-          console.log(`📨 Получено сообщение: ${messageText}`);
+      if (changes && changes.length > 0) {
+        for (const change of changes) {
+          const message = change.value;
+          const senderId = message.from;
+          const messageText = message.text?.body;
 
-          const aiReply = await getAIReply(messageText);
-          console.log(`🤖 Ответ ИИ: ${aiReply}`);
+          if (messageText) {
+            console.log(`📩 Получено сообщение: ${messageText}`);
 
-          await axios.post(
-            `https://graph.facebook.com/v19.0/${IG_BUSINESS_ID}/messages`,
-            {
-              recipient: { id: senderId },
-              messaging_type: 'RESPONSE',
-              message: { text: aiReply },
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${INSTAGRAM_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json',
+            const aiReply = await getAIReply(messageText);
+            console.log(`🤖 Ответ ИИ: ${aiReply}`);
+
+            await axios.post(
+              `https://graph.facebook.com/v19.0/${process.env.IG_BUSINESS_ID}/messages`,
+              {
+                recipient: { id: senderId },
+                messaging_type: 'RESPONSE',
+                message: { text: aiReply },
               },
-            }
-          );
+              {
+                headers: {
+                  Authorization: `Bearer ${process.env.INSTAGRAM_ACCESS_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+          }
         }
       }
     }
+
+    res.status(200).send('EVENT_RECEIVED');
+  } else {
+    res.sendStatus(404);
   }
-  res.status(200).send('EVENT_RECEIVED');
-} else {
-  res.sendStatus(404);
-}
 });
 
 // Запрос в OpenAI
